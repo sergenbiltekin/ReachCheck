@@ -1,0 +1,311 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge %}
+
+{% set is_finished = scan.status in ["completed", "cancelled", "error"] %}
+
+{% block content %}
+<div class="mb-4">
+  <a href="/" class="text-sm text-slate-400 hover:text-slate-600">&larr; Dashboard</a>
+</div>
+
+<section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-xl font-semibold tracking-tight">Scan #{{ scan.id }}</h1>
+      <p class="mt-1 text-sm text-slate-500">
+        {{ scan.created_at.strftime("%Y-%m-%d %H:%M") }}
+        &middot; profile <span class="font-medium capitalize">{{ scan.profile }}</span>
+        &middot; mode <span class="font-medium">{{ "stop on first reachable" if scan.mode == "early_exit" else "scan all hosts" }}</span>
+        {% if scan.parent_scan_id %}
+        &middot; re-scan of <a class="text-emerald-600 hover:underline" href="/scans/{{ scan.parent_scan_id }}">#{{ scan.parent_scan_id }}</a>
+        {% endif %}
+      </p>
+    </div>
+    <div class="flex items-center gap-3">
+      {% if is_finished and scan.results %}
+      <a href="/api/scans/{{ scan.id }}/export?format=csv"
+        class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">CSV</a>
+      <a href="/api/scans/{{ scan.id }}/export?format=json"
+        class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">JSON</a>
+      {% endif %}
+      <span id="status-badge">{{ status_badge(scan.status) }}</span>
+      <button id="cancel-btn" type="button"
+        class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 {{ 'hidden' if is_finished else '' }}">
+        Cancel
+      </button>
+    </div>
+  </div>
+
+  <div class="mt-4 flex items-center gap-4 text-sm">
+    <span class="text-slate-500">Reachable:
+      <span id="reachable-count" class="font-semibold text-slate-800">{{ scan.reachable_subnets }}</span>
+      /
+      <span id="total-count" class="font-semibold text-slate-800">{{ scan.total_subnets }}</span>
+    </span>
+    <span id="progress" class="text-slate-400"></span>
+  </div>
+
+  <div class="mt-5 overflow-hidden rounded-xl border border-slate-200">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
+        <tr>
+          <th class="px-4 py-2 font-medium">Subnet</th>
+          <th class="px-4 py-2 font-medium">Status</th>
+          <th class="px-4 py-2 font-medium">Reached via</th>
+          <th class="px-4 py-2 font-medium">Method</th>
+          <th class="px-4 py-2 font-medium">Time</th>
+          <th class="px-4 py-2 font-medium">Checked</th>
+        </tr>
+      </thead>
+      <tbody id="results">
+        {% for r in scan.results %}
+        <tr data-cidr="{{ r.cidr }}" class="border-t border-slate-100 align-top">
+          <td class="px-4 py-2.5 font-mono text-slate-700">{{ r.cidr }}</td>
+          <td class="px-4 py-2.5">{{ status_badge(r.status) }}</td>
+          <td class="px-4 py-2.5">
+            {% if r.reachable_hosts and r.reachable_hosts | length > 1 %}
+            <details class="group">
+              <summary class="cursor-pointer font-mono text-slate-700">
+                {{ r.reachable_hosts | length }} hosts
+                <span class="text-slate-400 group-open:hidden">&#9656;</span>
+              </summary>
+              <ul class="mt-1 space-y-0.5 font-mono text-xs text-slate-500">
+                {% for h in r.reachable_hosts %}
+                <li>{{ h.host }}<span class="text-slate-400"> &middot; {{ h.method }}{% if h.response_ms is not none %} &middot; {{ h.response_ms }} ms{% endif %}</span></li>
+                {% endfor %}
+              </ul>
+            </details>
+            {% else %}
+            <span class="font-mono text-slate-600">{{ r.first_host or "—" }}</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-2.5 text-slate-600">{{ r.method or "—" }}</td>
+          <td class="px-4 py-2.5 text-slate-600">{{ (r.response_ms ~ " ms") if r.response_ms is not none else "—" }}</td>
+          <td class="px-4 py-2.5 text-slate-500">{{ r.hosts_checked }}/{{ r.hosts_total }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p id="empty-row" class="px-4 py-6 text-center text-sm text-slate-400 {{ 'hidden' if scan.results else '' }}">
+      Waiting for results&hellip;
+    </p>
+  </div>
+
+  {% if is_finished and unreachable %}
+  <div class="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+    <p class="text-sm font-medium text-slate-700">
+      {{ unreachable | length }} subnet{{ "s" if unreachable | length != 1 }} unreachable. Re-check them:
+    </p>
+    <div class="mt-3 flex flex-wrap gap-2">
+      <form method="post" action="/scans">
+        <input type="hidden" name="cidrs" value="{{ unreachable | join(' ') }}">
+        <input type="hidden" name="profile" value="{{ scan.profile }}">
+        <input type="hidden" name="mode" value="{{ scan.mode }}">
+        <input type="hidden" name="parent_scan_id" value="{{ scan.id }}">
+        <button type="submit"
+          class="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-900">
+          Re-scan (same profile)
+        </button>
+      </form>
+      {% if escalated_profile != scan.profile %}
+      <form method="post" action="/scans">
+        <input type="hidden" name="cidrs" value="{{ unreachable | join(' ') }}">
+        <input type="hidden" name="profile" value="{{ escalated_profile }}">
+        <input type="hidden" name="mode" value="{{ scan.mode }}">
+        <input type="hidden" name="parent_scan_id" value="{{ scan.id }}">
+        <button type="submit"
+          class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+          title="Confirm with longer timeouts, more ports and retries">
+          Re-scan harder ({{ escalated_profile }})
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if children %}
+  <div class="mt-5">
+    <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-400">Re-scans of this scan</h3>
+    <ul class="mt-2 space-y-1 text-sm">
+      {% for c in children %}
+      <li class="flex items-center gap-2">
+        <a href="/scans/{{ c.id }}" class="font-mono text-emerald-600 hover:underline">#{{ c.id }}</a>
+        <span class="text-slate-400">{{ c.created_at.strftime("%Y-%m-%d %H:%M") }}</span>
+        <span class="capitalize text-slate-500">{{ c.profile }}</span>
+        {{ status_badge(c.status) }}
+        <span class="text-slate-500">{{ c.reachable_subnets }}/{{ c.total_subnets }} reachable</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <div class="mt-6 border-t border-slate-100 pt-4">
+    <form method="post" action="/scans/{{ scan.id }}/delete"
+      onsubmit="return confirm('Delete scan #{{ scan.id }} and its results?');">
+      <button type="submit" class="text-sm font-medium text-rose-600 hover:text-rose-700">
+        Delete this scan
+      </button>
+    </form>
+  </div>
+</section>
+
+<script>
+(function () {
+  const scanId = {{ scan.id }};
+  const isFinished = {{ "true" if is_finished else "false" }};
+  const total = {{ scan.total_subnets }};
+  const tbody = document.getElementById("results");
+  const emptyRow = document.getElementById("empty-row");
+  const reachableEl = document.getElementById("reachable-count");
+  const progressEl = document.getElementById("progress");
+  const statusBadge = document.getElementById("status-badge");
+  const cancelBtn = document.getElementById("cancel-btn");
+
+  // Single source of truth: cidr -> last known status. Counters are always
+  // derived from this map, so it does not matter whether a subnet arrived via
+  // the initial snapshot or a live event (no double counting, no missed ones).
+  const state = {};
+  {% for r in scan.results %}
+  state[{{ r.cidr | tojson }}] = {{ r.status | tojson }};
+  {% endfor %}
+
+  const STATUS_STYLES = {
+    reachable: "bg-emerald-100 text-emerald-700",
+    unreachable: "bg-rose-100 text-rose-700",
+    error: "bg-amber-100 text-amber-700",
+    scanning: "bg-sky-100 text-sky-700",
+    completed: "bg-emerald-100 text-emerald-700",
+    running: "bg-sky-100 text-sky-700",
+    cancelled: "bg-slate-200 text-slate-600",
+  };
+
+  function badge(status) {
+    const cls = STATUS_STYLES[status] || "bg-slate-100 text-slate-600";
+    return `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${cls}">${esc(status)}</span>`;
+  }
+
+  // Escape any value that ends up inside innerHTML. CIDR tokens can be arbitrary
+  // user input (invalid ones are stored verbatim as ERROR results), so they must
+  // never be treated as HTML.
+  function esc(s) {
+    return String(s === null || s === undefined ? "" : s).replace(
+      /[&<>"']/g,
+      (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]
+    );
+  }
+
+  function cell(text) { return text === null || text === undefined || text === "" ? "—" : esc(text); }
+
+  function reachedVia(d) {
+    const hosts = d.reachable_hosts || [];
+    if (hosts.length > 1) {
+      const items = hosts.map((h) => {
+        const meta = esc(h.method || "") + (h.response_ms != null ? " · " + esc(h.response_ms + " ms") : "");
+        return `<li>${esc(h.host)}<span class="text-slate-400"> · ${meta}</span></li>`;
+      }).join("");
+      return `<details class="group"><summary class="cursor-pointer font-mono text-slate-700">${hosts.length} hosts</summary>`
+        + `<ul class="mt-1 space-y-0.5 font-mono text-xs text-slate-500">${items}</ul></details>`;
+    }
+    return `<span class="font-mono text-slate-600">${cell(d.first_host)}</span>`;
+  }
+
+  function selectRow(cidr) {
+    const sel = (window.CSS && CSS.escape) ? CSS.escape(cidr) : cidr;
+    return tbody.querySelector(`tr[data-cidr="${sel}"]`);
+  }
+
+  function upsertRow(d) {
+    if (emptyRow) emptyRow.classList.add("hidden");
+    let row = selectRow(d.cidr);
+    if (!row) {
+      row = document.createElement("tr");
+      row.dataset.cidr = d.cidr;
+      row.className = "border-t border-slate-100 align-top";
+      tbody.appendChild(row);
+    }
+    const timeText = d.response_ms !== null && d.response_ms !== undefined ? d.response_ms + " ms" : "—";
+    row.innerHTML = `
+      <td class="px-4 py-2.5 font-mono text-slate-700">${esc(d.cidr)}</td>
+      <td class="px-4 py-2.5">${badge(d.status)}</td>
+      <td class="px-4 py-2.5">${reachedVia(d)}</td>
+      <td class="px-4 py-2.5 text-slate-600">${cell(d.method)}</td>
+      <td class="px-4 py-2.5 text-slate-600">${d.status === "scanning" ? "—" : timeText}</td>
+      <td class="px-4 py-2.5 text-slate-500">${cell(d.hosts_checked)}/${cell(d.hosts_total)}</td>`;
+  }
+
+  const DONE = new Set(["reachable", "unreachable", "error"]);
+
+  function refreshSummary() {
+    let done = 0, reachable = 0;
+    for (const cidr in state) {
+      const s = state[cidr];
+      if (s === "reachable") reachable++;
+      if (DONE.has(s)) done++;
+    }
+    reachableEl.textContent = reachable;
+    progressEl.textContent = total ? `${done}/${total} subnets done` : "";
+  }
+
+  function setStatus(status) {
+    statusBadge.innerHTML = badge(status);
+    if (cancelBtn) cancelBtn.classList.add("hidden");
+  }
+
+  // Apply a finalized result: record status, draw the row, recompute counters.
+  function applyResult(d) {
+    if (!d || !d.cidr) return;
+    state[d.cidr] = d.status;
+    upsertRow(d);
+    refreshSummary();
+  }
+
+  if (cancelBtn) {
+    cancelBtn.addEventListener("click", async () => {
+      cancelBtn.disabled = true;
+      await fetch(`/api/scans/${scanId}/cancel`, { method: "POST" });
+    });
+  }
+
+  refreshSummary();
+
+  if (!isFinished) {
+    const es = new EventSource(`/api/scans/${scanId}/stream`);
+
+    es.addEventListener("snapshot", (e) => {
+      const snap = JSON.parse(e.data);
+      for (const [cidr, info] of Object.entries(snap.subnets || {})) {
+        if (DONE.has(info.status)) applyResult({ cidr, ...info });
+      }
+    });
+
+    es.addEventListener("progress", (e) => {
+      const d = JSON.parse(e.data);
+      if (DONE.has(state[d.cidr])) return; // already finalized; ignore late progress
+      state[d.cidr] = "scanning";
+      upsertRow({ cidr: d.cidr, status: "scanning", hosts_checked: d.checked, hosts_total: d.total });
+    });
+
+    es.addEventListener("subnet_complete", (e) => applyResult(JSON.parse(e.data)));
+
+    es.addEventListener("scan_complete", (e) => {
+      const d = JSON.parse(e.data);
+      setStatus(d.status || "completed");
+      refreshSummary();
+      es.close();
+      // Reload once to render server-side extras (e.g. the re-scan button).
+      setTimeout(() => window.location.reload(), 400);
+    });
+
+    es.addEventListener("error", (e) => {
+      if (e.data) {
+        try { setStatus(JSON.parse(e.data).status || "error"); } catch (_) { /* connection blip */ }
+      }
+    });
+
+    es.addEventListener("closed", () => es.close());
+  }
+})();
+</script>
+{% endblock %}

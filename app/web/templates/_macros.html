@@ -1,0 +1,16 @@
+{# Reusable UI snippets. #}
+
+{% macro status_badge(status) -%}
+  {%- set styles = {
+    "reachable":   "bg-emerald-100 text-emerald-700",
+    "unreachable": "bg-rose-100 text-rose-700",
+    "error":       "bg-amber-100 text-amber-700",
+    "completed":   "bg-emerald-100 text-emerald-700",
+    "running":     "bg-sky-100 text-sky-700",
+    "pending":     "bg-slate-100 text-slate-600",
+    "cancelled":   "bg-slate-200 text-slate-600",
+  } -%}
+  <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium {{ styles.get(status, 'bg-slate-100 text-slate-600') }}">
+    {{ status }}
+  </span>
+{%- endmacro %}

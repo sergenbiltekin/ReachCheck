@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ app_name }}{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body class="h-full bg-slate-50 text-slate-800 antialiased">
+  <header class="border-b border-slate-200 bg-white">
+    <div class="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
+      <a href="/" class="flex items-center gap-2">
+        <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500 text-white font-bold">R</span>
+        <span class="text-lg font-semibold tracking-tight">{{ app_name }}</span>
+      </a>
+      <span class="text-xs text-slate-400">v{{ version }}</span>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-5xl px-6 py-8">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="mx-auto max-w-5xl px-6 py-8 text-center text-xs text-slate-400">
+    ReachCheck &mdash; subnet reachability testing. Not a vulnerability scanner.
+  </footer>
+</body>
+</html>
