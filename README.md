@@ -5,6 +5,15 @@ A VLAN/subnet **reachability testing tool**. Its purpose is to quickly determine
 
 > This is not a vulnerability scanner. It only checks network reachability.
 
+<p align="center">
+  <img src="docs/dashboard.png" alt="ReachCheck dashboard" width="820">
+</p>
+
+<p align="center">
+  <em>Scan detail — in "scan all hosts" mode every reached machine is listed:</em><br>
+  <img src="docs/scan-detail.png" alt="ReachCheck scan detail" width="820">
+</p>
+
 ## Features
 
 - One or multiple CIDR inputs (whitespace/comma/semicolon separated)
